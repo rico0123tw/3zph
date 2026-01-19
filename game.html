@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>水果接接樂 - 關卡版</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+    }
+    #gameCanvas {
+      display: block;
+      margin: auto;
+      border: 2px solid #333;
+    }
+    #score {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 24px;
+      font-weight: bold;
+      color: #fff;
+    }
+    #restartBtn {
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 20px;
+      padding: 8px 16px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="score">分數: 0</div>
+  <button id="restartBtn">重新開始</button>
+  <canvas id="gameCanvas" width="500" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreDisplay = document.getElementById("score");
+    const restartBtn = document.getElementById("restartBtn");
+
+    // 背景圖片
+    const bgImg = new Image();
+    bgImg.src = "藥局.png";
+
+    // 玩家角色圖片
+    const playerImg = new Image();
+    playerImg.src = "角色.png";
+
+    // 水果圖片載入
+    const fruitImgs = {
+      "🍎": { img: new Image(), score: 1 },
+      "🍌": { img: new Image(), score: 2 },
+      "🍊": { img: new Image(), score: 3 },
+      "🍓": { img: new Image(), score: 5 },
+      "🍉": { img: new Image(), bad: true }
+    };
+    fruitImgs["🍎"].img.src = "apple.png";
+    fruitImgs["🍌"].img.src = "banana.png";
+    fruitImgs["🍊"].img.src = "orange.png";
+    fruitImgs["🍓"].img.src = "strawberry.png";
+    fruitImgs["🍉"].img.src = "watermelon.png";
+
+    const fruits = ["🍎","🍌","🍊","🍓"];
+    let player, items, score, gameOver, mouseX, combo, spawnInterval;
+    let level, fruitCount, speedMultiplier, watermelonChance;
+    let paused = true; // 遊戲一開始暫停
+    const catchRadius = 30; // 判定半徑
+    const maxLevel = 10;
+    const fruitsPerLevel = 30;
+
+    function initGame() {
+      player = { 
+        x: canvas.width/2 - 60, 
+        y: canvas.height - canvas.height/4 - 20, 
+        width: canvas.height/4 * 0.75, 
+        height: canvas.height/4 
+      };
+      items = [];
+      score = 0;
+      combo = 0;
+      gameOver = false;
+      level = 1;
+      fruitCount = 0;
+      speedMultiplier = 1;
+      watermelonChance = 0.2; // 初始西瓜機率
+      scoreDisplay.textContent = "分數: 0 | 第 1 關";
+      restartBtn.style.display = "none";
+      mouseX = player.x;
+
+      clearInterval(spawnInterval);
+      spawnInterval = setInterval(spawnItem, 1000);
+
+      paused = true; // 一開始暫停
+      update();
+    }
+
+    // 滑鼠控制
+    canvas.addEventListener("mousemove", e => {
+      const rect = canvas.getBoundingClientRect();
+      mouseX = e.clientX - rect.left - player.width / 2;
+    });
+
+    // 滑鼠點擊切換暫停/繼續
+    canvas.addEventListener("click", () => {
+      if (gameOver) return;
+      paused = !paused;
+      if (!paused) {
+        update();
+      }
+    });
+
+    function spawnItem() {
+      if (gameOver || paused) return;
+      const isBad = Math.random() < watermelonChance;
+      const fruitKey = isBad ? "🍉" : fruits[Math.floor(Math.random() * fruits.length)];
+      items.push({
+        x: Math.random() * (canvas.width - 60),
+        y: -60,
+        key: fruitKey,
+        bad: isBad
+      });
+    }
+
+    function update() {
+      if (gameOver) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 畫背景 + 調暗效果
+      ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 玩家位置平滑跟隨滑鼠
+      player.x += (mouseX - player.x) * 0.1;
+      ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+
+      if (paused) {
+        // 暫停畫面顯示規則
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("遊戲暫停", canvas.width/2, canvas.height/2 - 60);
+        ctx.fillText("規則：", canvas.width/2, canvas.height/2 - 30);
+        ctx.fillText("每關需接到 30 顆水果 (西瓜不算)", canvas.width/2, canvas.height/2);
+        ctx.fillText("每過一關西瓜機率增加 1.1 倍", canvas.width/2, canvas.height/2 + 30);
+        ctx.fillText("點擊滑鼠繼續遊戲", canvas.width/2, canvas.height/2 + 60);
+        return; // 不更新遊戲物件
+      }
+
+      // 更新水果
+      items.forEach(item => {
+        item.y += Math.min(10 * speedMultiplier, (4 + score * 0.05) * speedMultiplier);
+
+        const fruitData = fruitImgs[item.key];
+        ctx.drawImage(fruitData.img, item.x, item.y, 60, 60); // 放大兩倍
+
+        // 碰撞檢測 (中心點判定)
+        const playerCenterX = player.x + player.width / 2;
+        const playerCenterY = player.y + player.height / 2;
+        const fruitCenterX = item.x + 30;
+        const fruitCenterY = item.y + 30;
+
+        const dx = playerCenterX - fruitCenterX;
+        const dy = playerCenterY - fruitCenterY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < catchRadius) {
+          if (item.bad) {
+            endGame();
+          } else {
+            score += fruitData.score;
+            combo++;
+            fruitCount++;
+            if (combo % 3 === 0) {
+              score += 5; // combo加分
+            }
+            scoreDisplay.textContent = "分數: " + score + " | 第 " + level + " 關 (Combo: " + combo + ")";
+          }
+          item.y = canvas.height + 100; // 移除
+        }
+      });
+
+      // 移除超出畫面水果
+      items = items.filter(item => item.y < canvas.height + 50);
+
+      // 檢查是否過關
+      if (fruitCount >= fruitsPerLevel) {
+        if (level < maxLevel) {
+          level++;
+          fruitCount = 0;
+          speedMultiplier *= 1.1; // 速度遞增
+          watermelonChance *= 1.1; // 西瓜機率增加
+          scoreDisplay.textContent = "分數: " + score + " | 第 " + level + " 關";
+          paused = true; // 過關後暫停顯示規則
+        } else {
+          endGame();
+        }
+      }
+
+      requestAnimationFrame(update);
+    }
+
+        function endGame() {
+      gameOver = true;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#fff";
+      ctx.font = "28px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("遊戲結束! 最終分數: " + score, canvas.width/2, canvas.height/2 - 20);
+      ctx.fillText("多吃水果, 三芝藥師藥局關心您", canvas.width/2, canvas.height/2 + 20);
+      restartBtn.style.display = "block";
+    }
+
+    restartBtn.addEventListener("click", initGame);
+
+    // 啟動遊戲
+    initGame();
+  </script>
+</body>
+</html>
